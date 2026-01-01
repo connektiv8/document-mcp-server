@@ -96,7 +96,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         for i, result in enumerate(results, 1):
             response += f"--- Result {i} (similarity: {result['similarity']:.3f}) ---\n"
             response += f"Source: {result['metadata'].get('source', 'Unknown')}\n"
-            response += f"Text: {result['text'][:500]}...\n\n"
+            text_preview = result['text'][:500]
+            if len(result['text']) > 500:
+                text_preview += '...'
+            response += f"Text: {text_preview}\n\n"
         
         return [TextContent(type="text", text=response)]
     
@@ -118,21 +121,27 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         all_chunks = []
         all_metadata = []
         
+        errors = []
         for file in files:
             try:
                 chunks, metadata = doc_processor.process_and_chunk(file)
                 all_chunks.extend(chunks)
                 all_metadata.extend(metadata)
             except Exception as e:
-                print(f"Error processing {file}: {e}")
+                error_msg = f"Error processing {file.name}: {str(e)}"
+                print(error_msg)
+                errors.append(error_msg)
         
         if all_chunks:
             doc_store.add_documents(all_chunks, all_metadata)
         
         stats = doc_store.get_stats()
+        result_text = f"Indexed {len(files)} files into {stats['total_chunks']} chunks"
+        if errors:
+            result_text += f"\n\nWarnings:\n" + "\n".join(errors)
         return [TextContent(
             type="text",
-            text=f"Indexed {len(files)} files into {stats['total_chunks']} chunks"
+            text=result_text
         )]
     
     elif name == "get_stats":

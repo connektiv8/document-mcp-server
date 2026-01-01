@@ -71,7 +71,9 @@ class FastDocumentStore:
                     'text': self.documents[idx],
                     'metadata': self.metadata[idx],
                     'distance': float(distance),
-                    'similarity': float(1 / (1 + distance))  # Convert distance to similarity
+                    # Convert L2 distance to similarity score (0-1 range, higher is better)
+                    # Using inverse relationship: 1 / (1 + distance)
+                    'similarity': float(1 / (1 + distance))
                 })
         return results
     

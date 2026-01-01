@@ -30,10 +30,10 @@ class DocumentProcessor:
         
         if suffix == '.pdf':
             return self.process_pdf(filepath)
-        elif suffix in ['.docx', '.doc']:
+        elif suffix == '.docx':
             return self.process_docx(filepath)
         else:
-            raise ValueError(f"Unsupported file type: {suffix}")
+            raise ValueError(f"Unsupported file type: {suffix}. Only PDF and DOCX are supported.")
     
     def chunk_text(self, text: str, metadata: dict = None) -> Tuple[List[str], List[dict]]:
         """Split text into overlapping chunks"""
