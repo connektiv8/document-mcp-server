@@ -1,8 +1,7 @@
 import asyncio
 from mcp.server import Server
-from mcp.types import Tool, TextContent, EmbeddedResource
+from mcp.types import Tool, TextContent
 from mcp.server.stdio import stdio_server
-from pydantic import AnyUrl
 from pathlib import Path
 from typing import Optional
 import json

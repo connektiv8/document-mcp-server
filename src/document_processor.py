@@ -52,7 +52,7 @@ class DocumentProcessor:
             chunk = ' '.join(words[i:i + self.chunk_size])
             if chunk.strip():
                 chunks.append(chunk)
-                chunk_meta = metadata.copy() if metadata else {}
+                chunk_meta = metadata.copy() if metadata is not None else {}
                 chunk_meta['chunk_index'] = len(chunks) - 1
                 metadatas.append(chunk_meta)
         
