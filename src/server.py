@@ -1,0 +1,162 @@
+import asyncio
+from mcp.server import Server
+from mcp.types import Tool, TextContent, EmbeddedResource
+from mcp.server.stdio import stdio_server
+from pydantic import AnyUrl
+from pathlib import Path
+from typing import Optional
+import json
+
+from document_store import FastDocumentStore
+from document_processor import DocumentProcessor
+
+# Initialize components
+doc_store = FastDocumentStore()
+doc_processor = DocumentProcessor()
+
+# Create MCP server
+app = Server("document-search-server")
+
+@app.list_tools()
+async def list_tools() -> list[Tool]:
+    """List available MCP tools"""
+    return [
+        Tool(
+            name="search_documents",
+            description="Search through uploaded PDF and DOCX documents using semantic similarity. Returns relevant text chunks from the documents.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query to find relevant document chunks"
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum number of results to return (default: 5)",
+                        "default": 5
+                    }
+                },
+                "required": ["query"]
+            }
+        ),
+        Tool(
+            name="index_documents",
+            description="Index all PDF and DOCX files from the documents folder. This processes the files and makes them searchable.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "reindex": {
+                        "type": "boolean",
+                        "description": "If true, clear existing index and reindex all documents",
+                        "default": False
+                    }
+                }
+            }
+        ),
+        Tool(
+            name="get_stats",
+            description="Get statistics about the document store (number of indexed chunks, etc.)",
+            inputSchema={
+                "type": "object",
+                "properties": {}
+            }
+        ),
+        Tool(
+            name="clear_index",
+            description="Clear all indexed documents from the vector store",
+            inputSchema={
+                "type": "object",
+                "properties": {}
+            }
+        )
+    ]
+
+@app.call_tool()
+async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+    """Handle tool calls"""
+    
+    if name == "search_documents":
+        query = arguments.get("query", "")
+        max_results = arguments.get("max_results", 5)
+        
+        if not query:
+            return [TextContent(type="text", text="Error: query parameter is required")]
+        
+        results = doc_store.search(query, k=max_results)
+        
+        if not results:
+            return [TextContent(
+                type="text",
+                text="No results found. Make sure documents are indexed using the 'index_documents' tool."
+            )]
+        
+        # Format results
+        response = f"Found {len(results)} relevant chunks:\n\n"
+        for i, result in enumerate(results, 1):
+            response += f"--- Result {i} (similarity: {result['similarity']:.3f}) ---\n"
+            response += f"Source: {result['metadata'].get('source', 'Unknown')}\n"
+            response += f"Text: {result['text'][:500]}...\n\n"
+        
+        return [TextContent(type="text", text=response)]
+    
+    elif name == "index_documents":
+        reindex = arguments.get("reindex", False)
+        
+        if reindex:
+            doc_store.clear()
+        
+        docs_path = Path("/app/data/documents")
+        files = list(docs_path.glob("*.pdf")) + list(docs_path.glob("*.docx"))
+        
+        if not files:
+            return [TextContent(
+                type="text",
+                text="No PDF or DOCX files found in /app/data/documents/"
+            )]
+        
+        all_chunks = []
+        all_metadata = []
+        
+        for file in files:
+            try:
+                chunks, metadata = doc_processor.process_and_chunk(file)
+                all_chunks.extend(chunks)
+                all_metadata.extend(metadata)
+            except Exception as e:
+                print(f"Error processing {file}: {e}")
+        
+        if all_chunks:
+            doc_store.add_documents(all_chunks, all_metadata)
+        
+        stats = doc_store.get_stats()
+        return [TextContent(
+            type="text",
+            text=f"Indexed {len(files)} files into {stats['total_chunks']} chunks"
+        )]
+    
+    elif name == "get_stats":
+        stats = doc_store.get_stats()
+        return [TextContent(
+            type="text",
+            text=json.dumps(stats, indent=2)
+        )]
+    
+    elif name == "clear_index":
+        doc_store.clear()
+        return [TextContent(type="text", text="Index cleared successfully")]
+    
+    else:
+        return [TextContent(type="text", text=f"Unknown tool: {name}")]
+
+async def main():
+    """Run the MCP server"""
+    async with stdio_server() as (read_stream, write_stream):
+        await app.run(
+            read_stream,
+            write_stream,
+            app.create_initialization_options()
+        )
+
+if __name__ == "__main__":
+    asyncio.run(main())
