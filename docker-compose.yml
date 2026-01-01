@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  document-mcp-server:
+    build: .
+    image: your-registry.example.com/document-mcp-server:latest
+    container_name: document-mcp-server
+    volumes:
+      # Mount documents folder (put your PDFs/DOCX here)
+      - ./data/documents:/app/data/documents:ro
+      # Mount vector store for persistence
+      - ./data/vector_store:/app/data/vector_store
+    restart: unless-stopped
+    # For MCP stdio communication
+    stdin_open: true
+    tty: true
+    # Optional: limit resources
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '2'
+          memory: 2G
