@@ -43,12 +43,14 @@ def extract_location(text: str) -> str | None:
 
 def index_documents(reindex=False):
     """Index documents with metadata extraction"""
-    print("Initializing PostgreSQL document store...")
+    import gc
+    
+    console.print("[cyan]Initializing PostgreSQL document store...[/cyan]")
     doc_store = PgVectorDocumentStore()
     doc_processor = DocumentProcessor()
     
     if reindex:
-        print("Clearing existing documents...")
+        console.print("[yellow]Clearing existing documents...[/yellow]")
         doc_store.clear()
     
     docs_path = Path("/app/data/documents")
@@ -56,17 +58,32 @@ def index_documents(reindex=False):
         docs_path = Path("data/documents")
     
     if not docs_path.exists():
-        print(f"Documents directory not found: {docs_path}")
+        console.print(f"[red]Documents directory not found: {docs_path}[/red]")
         return
     
     # Find all PDF and DOCX files
     files = list(docs_path.glob("**/*.pdf")) + list(docs_path.glob("**/*.docx"))
     
     if not files:
-        print(f"No documents found in {docs_path}")
+        console.print(f"[red]No documents found in {docs_path}[/red]")
         return
     
-    console.print(f"[cyan]Found {len(files)} documents to index[/cyan]")
+    # Get already indexed files
+    indexed_files = doc_store.get_indexed_files()
+    console.print(f"[cyan]Already indexed: {len(indexed_files)} files[/cyan]")
+    
+    # Filter out already indexed files
+    files_to_process = [f for f in files if f.name not in indexed_files]
+    
+    if not files_to_process:
+        console.print("[green]All files already indexed![/green]")
+        stats = doc_store.get_stats()
+        console.print(f"[cyan]Total chunks: {stats['total_chunks']}[/cyan]")
+        console.print(f"[cyan]Unique files: {stats['unique_files']}[/cyan]")
+        return
+    
+    console.print(f"[cyan]Found {len(files)} total documents[/cyan]")
+    console.print(f"[cyan]Processing {len(files_to_process)} new documents[/cyan]")
     
     with Progress(
         SpinnerColumn(),
@@ -75,9 +92,9 @@ def index_documents(reindex=False):
         TaskProgressColumn(),
         console=console
     ) as progress:
-        task = progress.add_task("[green]Indexing documents...", total=len(files))
+        task = progress.add_task("[green]Indexing documents...", total=len(files_to_process))
         
-        for file_path in files:
+        for file_path in files_to_process:
             progress.update(task, description=f"[green]Processing: {file_path.name}")
             
             try:
@@ -109,12 +126,18 @@ def index_documents(reindex=False):
                 # Add to store
                 doc_store.add_documents(chunks_data, enhanced_metadatas)
                 console.print(f"  [green]✓[/green] Indexed {len(chunks_data)} chunks")
+                
+                # Explicit cleanup to help with memory
+                del chunks_data, metadatas_data, enhanced_metadatas
+                gc.collect()
+                
                 progress.advance(task)
                 
             except Exception as e:
                 import traceback
                 console.print(f"  [red]✗ Error processing {file_path.name}: {e}[/red]")
                 traceback.print_exc()
+                gc.collect()
                 progress.advance(task)
                 continue
     

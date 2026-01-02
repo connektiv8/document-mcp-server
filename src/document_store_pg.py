@@ -86,6 +86,16 @@ class PgVectorDocumentStore:
         finally:
             conn.close()
     
+    def get_indexed_files(self) -> set:
+        """Get set of already indexed source files"""
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT DISTINCT source_file FROM documents WHERE source_file IS NOT NULL;")
+                return {row[0] for row in cur.fetchall()}
+        finally:
+            conn.close()
+    
     def add_documents(self, texts: List[str], metadatas: Optional[List[Dict]] = None):
         """Add documents in batches"""
         if not texts:
