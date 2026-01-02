@@ -208,5 +208,15 @@ __marimo__/
 
 # Document MCP Server data
 data/documents/
+data/documents_backup/
 data/vector_store/
 data/maps/
+
+# Node modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+rag-frontend/node_modules/
+rag-frontend/dist/
+rag-frontend/.vite/
