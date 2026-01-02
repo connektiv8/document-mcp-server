@@ -209,3 +209,4 @@ __marimo__/
 # Document MCP Server data
 data/documents/
 data/vector_store/
+data/maps/
