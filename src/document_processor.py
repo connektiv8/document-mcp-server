@@ -3,6 +3,7 @@ from docx import Document
 from pathlib import Path
 from typing import List, Tuple
 import re
+import sys
 
 class DocumentProcessor:
     def __init__(self, chunk_size: int = 512, chunk_overlap: int = 50):
@@ -60,7 +61,7 @@ class DocumentProcessor:
     
     def process_and_chunk(self, filepath: Path) -> Tuple[List[str], List[dict]]:
         """Process a file and return chunks with metadata"""
-        print(f"Processing {filepath.name}...")
+        print(f"Processing {filepath.name}...", file=sys.stderr)
         
         text = self.process_file(filepath)
         
@@ -71,6 +72,6 @@ class DocumentProcessor:
         }
         
         chunks, metadatas = self.chunk_text(text, metadata)
-        print(f"  Created {len(chunks)} chunks from {filepath.name}")
+        print(f"  Created {len(chunks)} chunks from {filepath.name}", file=sys.stderr)
         
         return chunks, metadatas

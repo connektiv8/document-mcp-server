@@ -1,4 +1,6 @@
 import asyncio
+import os
+import sys
 from mcp.server import Server
 from mcp.types import Tool, TextContent
 from mcp.server.stdio import stdio_server
@@ -6,11 +8,18 @@ from pathlib import Path
 from typing import Optional
 import json
 
-from document_store import FastDocumentStore
+# Import document stores based on STORE_TYPE environment variable
+STORE_TYPE = os.getenv('STORE_TYPE', 'faiss')
+
+if STORE_TYPE == 'postgres':
+    from document_store_pg import PgVectorDocumentStore as DocumentStore
+else:
+    from document_store import FastDocumentStore as DocumentStore
+
 from document_processor import DocumentProcessor
 
 # Initialize components
-doc_store = FastDocumentStore()
+doc_store = DocumentStore()
 doc_processor = DocumentProcessor()
 
 # Create MCP server
@@ -159,12 +168,44 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
 async def main():
     """Run the MCP server"""
-    async with stdio_server() as (read_stream, write_stream):
-        await app.run(
-            read_stream,
-            write_stream,
-            app.create_initialization_options()
+    mode = os.environ.get('MCP_MODE', 'stdio')
+    
+    if mode == 'http':
+        # HTTP/SSE mode
+        from mcp.server.sse import SseServerTransport
+        from starlette.applications import Starlette
+        from starlette.routing import Route
+        import uvicorn
+        
+        sse = SseServerTransport("/messages")
+        
+        async def handle_sse(request):
+            async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
+                await app.run(streams[0], streams[1], app.create_initialization_options())
+        
+        async def handle_messages(request):
+            await sse.handle_post_message(request.scope, request.receive, request._send)
+        
+        starlette_app = Starlette(
+            routes=[
+                Route("/sse", endpoint=handle_sse),
+                Route("/messages", endpoint=handle_messages, methods=["POST"]),
+            ]
         )
+        
+        port = int(os.environ.get('MCP_PORT', '8000'))
+        print(f"Starting MCP server in HTTP mode on port {port}", file=sys.stderr)
+        config = uvicorn.Config(starlette_app, host="0.0.0.0", port=port, log_level="info")
+        server = uvicorn.Server(config)
+        await server.serve()
+    else:
+        # stdio mode (default)
+        async with stdio_server() as (read_stream, write_stream):
+            await app.run(
+                read_stream,
+                write_stream,
+                app.create_initialization_options()
+            )
 
 if __name__ == "__main__":
     asyncio.run(main())

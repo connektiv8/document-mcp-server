@@ -1,66 +1,73 @@
-# Document MCP Server
+# React + TypeScript + Vite
 
-Fast, CPU-optimized MCP server for searching PDF and DOCX documents using semantic similarity.
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-## Quick Start
+Currently, two official plugins are available:
 
-### 1. Build and Push to Registry
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
 
-```bash
-# Build the image
-docker build -t your-registry.example.com/document-mcp-server:latest .
+## React Compiler
 
-# Push to your registry
-docker push your-registry.example.com/document-mcp-server:latest
+The React Compiler is currently not compatible with SWC. See [this issue](https://github.com/vitejs/vite-plugin-react/issues/428) for tracking the progress.
+
+## Expanding the ESLint configuration
+
+If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+
+```js
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      // Other configs...
+
+      // Remove tseslint.configs.recommended and replace with this
+      tseslint.configs.recommendedTypeChecked,
+      // Alternatively, use this for stricter rules
+      tseslint.configs.strictTypeChecked,
+      // Optionally, add this for stylistic rules
+      tseslint.configs.stylisticTypeChecked,
+
+      // Other configs...
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.node.json', './tsconfig.app.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+])
 ```
 
-### 2. Run the Container
+You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
 
-```bash
-# Create data directories
-mkdir -p data/documents data/vector_store
+```js
+// eslint.config.js
+import reactX from 'eslint-plugin-react-x'
+import reactDom from 'eslint-plugin-react-dom'
 
-# Add your PDF/DOCX files to data/documents/
-
-# Run with docker-compose
-docker-compose up -d
-
-# Or run directly
-docker run -it \
-  -v $(pwd)/data/documents:/app/data/documents:ro \
-  -v $(pwd)/data/vector_store:/app/data/vector_store \
-  your-registry.example.com/document-mcp-server:latest
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      // Other configs...
+      // Enable lint rules for React
+      reactX.configs['recommended-typescript'],
+      // Enable lint rules for React DOM
+      reactDom.configs.recommended,
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.node.json', './tsconfig.app.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+])
 ```
-
-### 3. Use with MCP Client
-
-Configure your MCP client (e.g., Claude Desktop) to connect to the server:
-
-```json
-{
-  "mcpServers": {
-    "document-search": {
-      "command": "docker",
-      "args": [
-        "run", "-i", "--rm",
-        "-v", "/path/to/data/documents:/app/data/documents:ro",
-        "-v", "/path/to/data/vector_store:/app/data/vector_store",
-        "your-registry.example.com/document-mcp-server:latest"
-      ]
-    }
-  }
-}
-```
-
-## Available Tools
-
-1. **index_documents**: Process and index all PDF/DOCX files
-2. **search_documents**: Search indexed documents
-3. **get_stats**: Get indexing statistics
-4. **clear_index**: Clear the vector store
-
-## Performance
-
-- ~50-200 documents/sec indexing (CPU-dependent)
-- <100ms search queries
-- FAISS-optimized for CPU-only servers

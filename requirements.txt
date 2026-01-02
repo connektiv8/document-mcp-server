@@ -1,11 +1,15 @@
 # MCP Server
 mcp>=0.9.0
 pydantic>=2.0.0
+uvicorn>=0.27.0
+starlette>=0.36.0
 
 # Vector store and embeddings
 faiss-cpu>=1.7.4
 sentence-transformers>=2.3.1
 numpy>=1.24.0
+psycopg2-binary>=2.9.9
+pgvector>=0.2.4
 
 # Document processing
 pymupdf>=1.23.0

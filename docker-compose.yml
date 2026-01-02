@@ -1,25 +1,104 @@
-version: '3.8'
-
 services:
+  # PostgreSQL with pgvector
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: mcp-postgres
+    environment:
+      - POSTGRES_USER=mcp_user
+      - POSTGRES_PASSWORD=mcp_password
+      - POSTGRES_DB=mcp_documents
+    ports:
+      - "5566:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - rag-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+
+  # Document MCP Server (HTTP mode with PostgreSQL)
   document-mcp-server:
     build: .
-    image: your-registry.example.com/document-mcp-server:latest
+    image: document-mcp-server:pgvector
     container_name: document-mcp-server
+    environment:
+      - MCP_MODE=http
+      - MCP_PORT=8000
+      - STORE_TYPE=postgres
+      - DATABASE_URL=postgresql://mcp_user:mcp_password@postgres:5432/mcp_documents
+    ports:
+      - "8000:8000"
     volumes:
-      # Mount documents folder (put your PDFs/DOCX here)
       - ./data/documents:/app/data/documents:ro
-      # Mount vector store for persistence
-      - ./data/vector_store:/app/data/vector_store
+      - ./src:/app/src
+    networks:
+      - rag-network
+    depends_on:
+      - postgres
     restart: unless-stopped
-    # For MCP stdio communication
-    stdin_open: true
-    tty: true
-    # Optional: limit resources
     deploy:
       resources:
         limits:
           cpus: '4'
           memory: 4G
-        reservations:
-          cpus: '2'
-          memory: 2G
+
+  # Ollama Server
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - rag-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+
+  # RAG Backend Service
+  rag-backend:
+    build: ./rag-backend
+    container_name: rag-backend
+    environment:
+      - OLLAMA_URL=http://ollama:11434
+      - MCP_SERVER_URL=http://document-mcp-server:8000
+    ports:
+      - "8001:8001"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock  # For docker exec
+    networks:
+      - rag-network
+    depends_on:
+      - document-mcp-server
+      - ollama
+    restart: unless-stopped
+
+  # RAG Frontend (React/Vite)
+  rag-frontend:
+    build: ./rag-frontend
+    container_name: rag-frontend
+    ports:
+      - "3000:80"
+    environment:
+      - VITE_API_URL=http://localhost:8001
+    networks:
+      - rag-network
+    depends_on:
+      - rag-backend
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  ollama-data:
+
+networks:
+  rag-network:
+    driver: bridge

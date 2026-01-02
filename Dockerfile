@@ -11,11 +11,16 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Download the embedding model during build (saves time on startup)
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+# Download the embedding model during build to /root/.cache
+# This ensures it's available offline at runtime
+ENV TRANSFORMERS_OFFLINE=0
+RUN python -c "from sentence_transformers import SentenceTransformer; model = SentenceTransformer('all-MiniLM-L6-v2'); print('Model cached successfully')"
 
 # Copy application code
 COPY src/ ./src/
+
+# Copy indexing scripts
+COPY index_documents_pg.py ./
 
 # Create directories for data
 RUN mkdir -p /app/data/documents /app/data/vector_store

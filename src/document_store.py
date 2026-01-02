@@ -3,6 +3,7 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 import pickle
 import os
+import sys
 from typing import List, Dict, Optional
 from pathlib import Path
 
@@ -11,7 +12,7 @@ class FastDocumentStore:
         self.store_path = Path(store_path)
         self.store_path.mkdir(parents=True, exist_ok=True)
         
-        print("Loading embedding model...")
+        print("Loading embedding model...", file=sys.stderr)
         self.model = SentenceTransformer('all-MiniLM-L6-v2')
         self.dimension = 384
         
@@ -23,14 +24,14 @@ class FastDocumentStore:
         self.metadata = []
         
         self.load()
-        print(f"Document store initialized with {len(self.documents)} documents")
+        print(f"Document store initialized with {len(self.documents)} documents", file=sys.stderr)
     
     def add_documents(self, texts: List[str], metadatas: Optional[List[Dict]] = None):
         """Add documents in batches"""
         if not texts:
             return
         
-        print(f"Encoding {len(texts)} text chunks...")
+        print(f"Encoding {len(texts)} text chunks...", file=sys.stderr)
         embeddings = self.model.encode(
             texts,
             batch_size=32,
@@ -49,7 +50,7 @@ class FastDocumentStore:
             self.metadata.extend([{}] * len(texts))
         
         self.save()
-        print(f"Added {len(texts)} chunks. Total: {len(self.documents)}")
+        print(f"Added {len(texts)} chunks. Total: {len(self.documents)}", file=sys.stderr)
     
     def search(self, query: str, k: int = 5) -> List[Dict]:
         """Search for similar documents"""
@@ -92,11 +93,11 @@ class FastDocumentStore:
         docs_path = self.store_path / "docs.pkl"
         
         if index_path.exists():
-            print(f"Loading existing index from {index_path}")
+            print(f"Loading existing index from {index_path}", file=sys.stderr)
             self.index = faiss.read_index(str(index_path))
         
         if docs_path.exists():
-            print(f"Loading existing documents from {docs_path}")
+            print(f"Loading existing documents from {docs_path}", file=sys.stderr)
             with open(docs_path, 'rb') as f:
                 data = pickle.load(f)
                 self.documents = data['docs']
