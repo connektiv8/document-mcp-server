@@ -16,6 +16,7 @@ RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTr
 
 # Copy application code
 COPY src/ ./src/
+COPY index_documents_pg.py ./
 
 # Create directories for data
 RUN mkdir -p /app/data/documents /app/data/vector_store

@@ -1,0 +1,29 @@
+services:
+  document-mcp-server:
+    build: .
+    image: document-mcp-server:latest
+    container_name: document-mcp-server-http
+    ports:
+      - "8001:8001"  # HTTP/SSE mode
+    environment:
+      - MCP_MODE=http
+      - MCP_PORT=8001
+      - STORE_TYPE=faiss
+      - DEFAULT_REGION=Victoria, Australia
+      - NOMINATIM_USER_AGENT=MiningClaimMapper/1.0
+      # Add your OpenAI API key here or via .env
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      # Mount documents folder (put your PDFs/DOCX here)
+      - ./data/documents:/app/data/documents:ro
+      # Mount vector store for persistence
+      - ./data/vector_store:/app/data/vector_store
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '2'
+          memory: 2G
