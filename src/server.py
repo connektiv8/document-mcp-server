@@ -17,6 +17,9 @@ doc_processor = DocumentProcessor()
 geo_tools = GeoTools()
 claim_parser = ClaimParser()
 
+# Default region for geocoding
+DEFAULT_REGION = "California, USA"
+
 # Create MCP server
 app = Server("document-search-server")
 
@@ -86,7 +89,7 @@ async def list_tools() -> list[Tool]:
                     "region": {
                         "type": "string",
                         "description": "Geographic region for geocoding context (e.g., 'South Dakota, USA')",
-                        "default": "California, USA"
+                        "default": DEFAULT_REGION
                     }
                 },
                 "required": ["description"]
@@ -198,7 +201,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     
     elif name == "locate_mining_claim":
         description = arguments.get("description", "")
-        region = arguments.get("region", "California, USA")
+        region = arguments.get("region", DEFAULT_REGION)
         
         if not description:
             return [TextContent(type="text", text="Error: description parameter is required")]
@@ -238,13 +241,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         
         # Calculate claim coordinates if direction and distance provided
         if direction and distance:
-            # Convert distance to miles if needed
-            if distance_unit.lower() in ['km', 'kilometer', 'kilometers']:
-                distance_miles = float(distance) * 0.621371
-            elif distance_unit.lower() in ['ft', 'feet', 'foot']:
-                distance_miles = float(distance) / 5280
-            else:
-                distance_miles = float(distance)
+            # Convert distance to miles
+            distance_miles = geo_tools.convert_distance_to_miles(float(distance), distance_unit)
             
             # Convert direction to bearing
             bearing = geo_tools.cardinal_to_bearing(direction)
@@ -381,8 +379,8 @@ This data can be loaded into your existing OSM-based map server."""
                 })
                 continue
             
-            # Geocode reference location (use California as default region)
-            ref_coords = geo_tools.geocode(reference_location, "California, USA")
+            # Geocode reference location
+            ref_coords = geo_tools.geocode(reference_location, DEFAULT_REGION)
             
             if not ref_coords:
                 failed_claims.append({
@@ -395,12 +393,7 @@ This data can be loaded into your existing OSM-based map server."""
             # Calculate claim coordinates
             if direction and distance:
                 # Convert distance to miles
-                if distance_unit.lower() in ['km', 'kilometer', 'kilometers']:
-                    distance_miles = float(distance) * 0.621371
-                elif distance_unit.lower() in ['ft', 'feet', 'foot']:
-                    distance_miles = float(distance) / 5280
-                else:
-                    distance_miles = float(distance)
+                distance_miles = geo_tools.convert_distance_to_miles(float(distance), distance_unit)
                 
                 bearing = geo_tools.cardinal_to_bearing(direction)
                 claim_lat, claim_lon = geo_tools.calculate_destination(

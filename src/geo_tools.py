@@ -105,6 +105,27 @@ class GeoTools:
         
         return directions.get(direction, 0)
     
+    def convert_distance_to_miles(self, distance: float, unit: str) -> float:
+        """
+        Convert distance to miles from various units.
+        
+        Args:
+            distance: Distance value
+            unit: Unit of measurement (miles, km, kilometers, ft, feet, etc.)
+        
+        Returns:
+            Distance in miles
+        """
+        unit = unit.lower().strip()
+        
+        if unit in ['km', 'kilometer', 'kilometers']:
+            return distance * 0.621371
+        elif unit in ['ft', 'feet', 'foot']:
+            return distance / 5280
+        else:
+            # Assume miles if unknown
+            return distance
+    
     def calculate_destination(self, origin_lat: float, origin_lon: float, 
                             bearing: float, distance_miles: float) -> Tuple[float, float]:
         """
@@ -143,6 +164,11 @@ class GeoTools:
             List of features with name, type, and coordinates
         """
         try:
+            # Convert radius in km to degrees (approximate)
+            # At the equator, 1 degree ≈ 111 km
+            # This is an approximation that works reasonably well for small areas
+            degrees_offset = radius_km / 111.0
+            
             # Build Overpass query based on feature type
             if feature_type == "waterway":
                 element_type = "way"
@@ -158,9 +184,10 @@ class GeoTools:
                 element_type = "node"
                 selector = f'"{feature_type}"'
             
-            # Create query
+            # Create query with calculated bounding box
             query = overpassQueryBuilder(
-                bbox=[lat - 0.05, lon - 0.05, lat + 0.05, lon + 0.05],
+                bbox=[lat - degrees_offset, lon - degrees_offset, 
+                      lat + degrees_offset, lon + degrees_offset],
                 elementType=element_type,
                 selector=selector,
                 out='body',
@@ -219,15 +246,19 @@ class GeoTools:
         # Half the side length (distance from center to edge)
         half_side = side_miles / 2
         
+        # For diagonal distance from center to corner, multiply by sqrt(2)
+        SQRT_2 = math.sqrt(2)
+        diagonal_distance = half_side * SQRT_2
+        
         # Calculate corner points
         # NW corner
-        nw = self.calculate_destination(center_lat, center_lon, 315, half_side * 1.414)
+        nw = self.calculate_destination(center_lat, center_lon, 315, diagonal_distance)
         # NE corner
-        ne = self.calculate_destination(center_lat, center_lon, 45, half_side * 1.414)
+        ne = self.calculate_destination(center_lat, center_lon, 45, diagonal_distance)
         # SE corner
-        se = self.calculate_destination(center_lat, center_lon, 135, half_side * 1.414)
+        se = self.calculate_destination(center_lat, center_lon, 135, diagonal_distance)
         # SW corner
-        sw = self.calculate_destination(center_lat, center_lon, 225, half_side * 1.414)
+        sw = self.calculate_destination(center_lat, center_lon, 225, diagonal_distance)
         
         # Return as closed polygon (first point repeated at end)
         return [nw, ne, se, sw, nw]

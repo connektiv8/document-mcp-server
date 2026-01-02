@@ -18,7 +18,9 @@ class ClaimParser:
         # Initialize OpenAI client
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
-            print("Warning: OPENAI_API_KEY environment variable not set. Claim parsing will fail.")
+            print("Warning: OPENAI_API_KEY environment variable not set.")
+            print("Set OPENAI_API_KEY to enable claim parsing functionality.")
+            print("Without it, claim parsing will return errors.")
         
         self.client = OpenAI(api_key=api_key) if api_key else None
         
