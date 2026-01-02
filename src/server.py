@@ -1,4 +1,6 @@
 import asyncio
+import os
+import sys
 from mcp.server import Server
 from mcp.types import Tool, TextContent
 from mcp.server.stdio import stdio_server
@@ -6,13 +8,20 @@ from pathlib import Path
 from typing import Optional
 import json
 
-from document_store import FastDocumentStore
 from document_processor import DocumentProcessor
 from geo_tools import GeoTools
 from claim_parser import ClaimParser
 
-# Initialize components
-doc_store = FastDocumentStore()
+# Initialize document store based on STORE_TYPE environment variable
+STORE_TYPE = os.getenv('STORE_TYPE', 'faiss').lower()
+
+if STORE_TYPE == 'postgres':
+    from document_store_pg import PgVectorDocumentStore
+    doc_store = PgVectorDocumentStore()
+else:
+    from document_store import FastDocumentStore
+    doc_store = FastDocumentStore()
+
 doc_processor = DocumentProcessor()
 geo_tools = GeoTools()
 claim_parser = ClaimParser()
@@ -475,10 +484,42 @@ async def main():
         async def handle_messages(request):
             await sse.handle_post_message(request.scope, request.receive, request._send)
         
+        async def handle_search(request):
+            """Simple REST API endpoint for document search"""
+            import json
+            from starlette.responses import JSONResponse
+            
+            try:
+                body = await request.json()
+                query = body.get('query', '')
+                max_results = body.get('max_results', 3)
+                
+                if not query:
+                    return JSONResponse({"error": "query is required"}, status_code=400)
+                
+                # Debug logging
+                print(f"DEBUG /search: Store type = {type(doc_store).__name__}, query='{query}', k={max_results}", file=sys.stderr)
+                
+                # Perform search using doc_store
+                results = doc_store.search(query, k=max_results)
+                
+                print(f"DEBUG /search: Got {len(results)} results", file=sys.stderr)
+                
+                return JSONResponse({
+                    "success": True,
+                    "query": query,
+                    "results": results
+                })
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                return JSONResponse({"error": str(e)}, status_code=500)
+        
         starlette_app = Starlette(
             routes=[
                 Route("/sse", endpoint=handle_sse),
                 Route("/messages", endpoint=handle_messages, methods=["POST"]),
+                Route("/search", endpoint=handle_search, methods=["POST"]),
             ]
         )
         

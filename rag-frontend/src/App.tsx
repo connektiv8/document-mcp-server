@@ -9,12 +9,41 @@ interface Message {
   sources?: string[]
 }
 
+interface OllamaModel {
+  name: string
+  size: number
+}
+
 function App() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [model, setModel] = useState('llama3.2:3b')
+  const [model, setModel] = useState('llama3.2:1b')
+  const [availableModels, setAvailableModels] = useState<string[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // Fetch available models on component mount
+  useEffect(() => {
+    const fetchModels = async () => {
+      try {
+        const response = await fetch(`${API_URL}/models`)
+        if (response.ok) {
+          const data = await response.json()
+          const modelNames = data.models?.map((m: OllamaModel) => m.name) || []
+          setAvailableModels(modelNames)
+          // Set first available model as default if current model not available
+          if (modelNames.length > 0 && !modelNames.includes(model)) {
+            setModel(modelNames[0])
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch models:', error)
+        // Fallback to default model
+        setAvailableModels(['llama3.2:1b'])
+      }
+    }
+    fetchModels()
+  }, [])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -32,6 +61,10 @@ function App() {
     setInput('')
     setLoading(true)
 
+    // Add empty assistant message that we'll update with streaming tokens
+    const assistantMessageIndex = messages.length + 1
+    setMessages(prev => [...prev, { role: 'assistant', content: '' }])
+
     try {
       const response = await fetch(`${API_URL}/chat`, {
         method: 'POST',
@@ -47,19 +80,71 @@ function App() {
         throw new Error('Failed to get response')
       }
 
-      const data = await response.json()
-      const assistantMessage: Message = {
-        role: 'assistant',
-        content: data.response,
-        sources: data.sources
+      const reader = response.body?.getReader()
+      const decoder = new TextDecoder()
+      let accumulatedContent = ''
+      let sources: string[] = []
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          const chunk = decoder.decode(value)
+          const lines = chunk.split('\n')
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6))
+                
+                if (data.token) {
+                  accumulatedContent += data.token
+                  // Update the assistant message with accumulated content
+                  setMessages(prev => {
+                    const newMessages = [...prev]
+                    newMessages[assistantMessageIndex] = {
+                      role: 'assistant',
+                      content: accumulatedContent
+                    }
+                    return newMessages
+                  })
+                }
+                
+                if (data.done) {
+                  sources = data.sources || []
+                  // Update final message with sources
+                  setMessages(prev => {
+                    const newMessages = [...prev]
+                    newMessages[assistantMessageIndex] = {
+                      role: 'assistant',
+                      content: accumulatedContent,
+                      sources: sources
+                    }
+                    return newMessages
+                  })
+                }
+
+                if (data.error) {
+                  throw new Error(data.error)
+                }
+              } catch (e) {
+                // Ignore parse errors for incomplete chunks
+              }
+            }
+          }
+        }
       }
-      setMessages(prev => [...prev, assistantMessage])
     } catch (error) {
       console.error('Error:', error)
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: 'Sorry, there was an error processing your request.'
-      }])
+      setMessages(prev => {
+        const newMessages = [...prev]
+        newMessages[assistantMessageIndex] = {
+          role: 'assistant',
+          content: 'Sorry, there was an error processing your request.'
+        }
+        return newMessages
+      })
     } finally {
       setLoading(false)
     }
@@ -75,7 +160,8 @@ function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1>📚 Document RAG Chat</h1>
+        <h1>📚 Eureka 1854</h1>
+        <h2>Historical Document AI Chat</h2>
         <p>Ask questions about your historical mining documents</p>
       </header>
 
@@ -130,10 +216,13 @@ function App() {
               onChange={(e) => setModel(e.target.value)}
               disabled={loading}
             >
-              <option value="llama3.2:3b">Llama 3.2 (3B)</option>
-              <option value="llama3.2:1b">Llama 3.2 (1B)</option>
-              <option value="qwen2.5:3b">Qwen 2.5 (3B)</option>
-              <option value="phi3:mini">Phi-3 Mini</option>
+              {availableModels.length > 0 ? (
+                availableModels.map(modelName => (
+                  <option key={modelName} value={modelName}>{modelName}</option>
+                ))
+              ) : (
+                <option value="llama3.2:1b">Loading models...</option>
+              )}
             </select>
           </div>
           

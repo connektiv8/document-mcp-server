@@ -3,6 +3,7 @@ RAG Backend Service - FastAPI server that bridges Ollama and Document MCP Server
 """
 from fastapi import FastAPI, WebSocket, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import httpx
 import json
@@ -27,7 +28,7 @@ MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://document-mcp-server:8000")
 
 class ChatRequest(BaseModel):
     message: str
-    model: str = "llama3.2:3b"
+    model: str = "llama3.2:1b"  # Use available model
     max_results: int = 3
 
 class ChatResponse(BaseModel):
@@ -35,40 +36,47 @@ class ChatResponse(BaseModel):
     sources: List[dict]
 
 async def query_mcp_server(query: str, max_results: int = 3):
-    """Query the Document MCP Server for relevant chunks"""
+    """Query the Document MCP Server for relevant chunks via HTTP"""
     async with httpx.AsyncClient(timeout=30.0) as client:
-        # For HTTP mode, we'd use SSE - for simplicity using docker exec approach
-        # In production, implement proper SSE client
-        import subprocess
-        
-        cmd = ["docker", "exec", "-i", "document-mcp-server", "python", "src/server.py"]
-        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, 
-                               stderr=subprocess.PIPE, text=True, bufsize=1)
-        
-        # Initialize
-        init = {"jsonrpc": "2.0", "id": 0, "method": "initialize", 
-                "params": {"protocolVersion": "2024-11-05", "capabilities": {}, 
-                          "clientInfo": {"name": "rag-backend", "version": "1.0"}}}
-        proc.stdin.write(json.dumps(init) + "\n")
-        proc.stdin.flush()
-        proc.stdout.readline()
-        
-        # Search
-        search = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", 
-                 "params": {"name": "search_documents", 
-                           "arguments": {"query": query, "max_results": max_results}}}
-        proc.stdin.write(json.dumps(search) + "\n")
-        proc.stdin.flush()
-        
-        response = json.loads(proc.stdout.readline())
-        proc.stdin.close()
-        proc.terminate()
-        
-        return response["result"]["content"][0]["text"]
+        try:
+            response = await client.post(
+                f"{MCP_SERVER_URL}/search",
+                json={
+                    "query": query,
+                    "max_results": max_results
+                }
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            if not data.get('success') or not data.get('results'):
+                return "No relevant documents found."
+            
+            # Format results into readable text
+            results = data['results']
+            formatted = f"Found {len(results)} relevant document chunks:\n\n"
+            for i, result in enumerate(results, 1):
+                formatted += f"[Chunk {i}]\n"
+                formatted += f"{result['text']}\n"
+                if 'metadata' in result and result['metadata']:
+                    meta = result['metadata']
+                    if 'source_file' in meta:
+                        formatted += f"Source: {meta['source_file']}\n"
+                    if 'date_year' in meta:
+                        formatted += f"Year: {meta['date_year']}\n"
+                    if 'location' in meta:
+                        formatted += f"Location: {meta['location']}\n"
+                formatted += "\n"
+            
+            return formatted
+            
+        except Exception as e:
+            print(f"Error querying MCP server: {e}")
+            return f"Error searching documents: {str(e)}"
 
-async def query_ollama(prompt: str, model: str = "llama3.2:3b"):
+async def query_ollama(prompt: str, model: str = "llama3.2:1b"):
     """Query Ollama for response generation"""
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=300.0) as client:  # 5 minute timeout for slow models
         response = await client.post(
             f"{OLLAMA_URL}/api/generate",
             json={
@@ -94,29 +102,23 @@ async def list_models():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/chat", response_model=ChatResponse)
+@app.post("/chat")
 async def chat(request: ChatRequest):
-    """Main chat endpoint - RAG pipeline"""
+    """Main chat endpoint - RAG pipeline with streaming"""
+    from starlette.responses import StreamingResponse
     
-    # Step 1: Search for relevant documents
-    search_results = await query_mcp_server(request.message, request.max_results)
-    
-    # Parse sources from search results
-    sources = []
-    # Extract source information (simplified - you may want to parse more carefully)
-    if "Found" in search_results:
-        # Extract chunks for context
-        context = search_results
-    else:
-        context = "No relevant documents found."
-    
-    # Step 2: Build prompt for Ollama
-    prompt = f"""You are a helpful assistant that answers questions based on historical mining documents.
+    async def generate():
+        try:
+            # Step 1: Search for relevant documents
+            search_results = await query_mcp_server(request.message, request.max_results)
+            
+            # Step 2: Build prompt for Ollama
+            prompt = f"""You are a helpful assistant that answers questions based on historical mining documents.
 
 User Question: {request.message}
 
 Relevant Document Excerpts:
-{context}
+{search_results}
 
 Instructions:
 - Answer the question based ONLY on the information provided in the excerpts above
@@ -125,14 +127,34 @@ Instructions:
 - Be concise and factual
 
 Answer:"""
+
+            # Step 3: Stream response from Ollama
+            async with httpx.AsyncClient(timeout=300.0) as client:
+                async with client.stream(
+                    "POST",
+                    f"{OLLAMA_URL}/api/generate",
+                    json={
+                        "model": request.model,
+                        "prompt": prompt,
+                        "stream": True
+                    }
+                ) as response:
+                    async for line in response.aiter_lines():
+                        if line:
+                            try:
+                                chunk = json.loads(line)
+                                if "response" in chunk and chunk["response"]:
+                                    # Send each token as SSE
+                                    yield f"data: {json.dumps({'token': chunk['response']})}\n\n"
+                                if chunk.get("done", False):
+                                    # Send done signal with sources
+                                    yield f"data: {json.dumps({'done': True, 'sources': [search_results]})}\n\n"
+                            except json.JSONDecodeError:
+                                continue
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
     
-    # Step 3: Generate response with Ollama
-    response = await query_ollama(prompt, request.model)
-    
-    return ChatResponse(
-        response=response,
-        sources=[{"text": search_results}]
-    )
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 @app.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket):
@@ -143,7 +165,7 @@ async def websocket_chat(websocket: WebSocket):
         while True:
             data = await websocket.receive_json()
             message = data.get("message", "")
-            model = data.get("model", "llama3.2:3b")
+            model = data.get("model", "llama3.2:1b")
             
             # Search documents
             await websocket.send_json({"type": "status", "message": "Searching documents..."})

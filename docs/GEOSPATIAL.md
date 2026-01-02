@@ -22,6 +22,7 @@ The document-mcp-server now includes geospatial capabilities that allow you to:
 Parse a single mining claim description and calculate its GPS coordinates, returning structured geospatial data.
 
 **Input Parameters:**
+
 - `description` (required): Natural language description of the claim location
 - `region` (optional): Geographic region for geocoding context (default: "California, USA")
 
@@ -38,6 +39,7 @@ Parse a single mining claim description and calculate its GPS coordinates, retur
 ```
 
 **Output:**
+
 - Parsed claim information (name, reference location, direction, distance)
 - Calculated GPS coordinates
 - List of nearby natural features (if mentioned)
@@ -46,7 +48,7 @@ Parse a single mining claim description and calculate its GPS coordinates, retur
 
 **Example Output:**
 
-```
+```text
 Mining Claim Location Analysis
 =====================================
 
@@ -110,6 +112,7 @@ This data can be loaded into your existing OSM-based map server.
 Search documents for mining claims and automatically locate them all, returning combined geospatial data.
 
 **Input Parameters:**
+
 - `query` (required): Search query to find relevant claim documents
 - `max_results` (optional): Maximum number of claims to process (default: 10)
 
@@ -126,13 +129,14 @@ Search documents for mining claims and automatically locate them all, returning 
 ```
 
 **Output:**
+
 - Count of successfully located claims
 - Combined GeoJSON data for all claims
 - List of any failed geocoding attempts
 
 **Example Output:**
 
-```
+```text
 Batch Mining Claim Mapping
 ==========================
 
@@ -164,7 +168,7 @@ This data can be loaded into your existing OSM-based map server.
 
 ### 1. Natural Language Parsing
 
-The system uses OpenAI's GPT-4-turbo to extract structured location data from claim descriptions. It identifies:
+The system uses the AI model (LLM) to extract structured location data from claim descriptions. It identifies:
 
 - **Claim name**: Name of the mining claim
 - **Reference location**: Known landmark or town (e.g., "Deadwood")
@@ -215,6 +219,7 @@ The system can find nearby features using the **Overpass API**:
 All geospatial data is formatted as GeoJSON for easy integration with mapping systems:
 
 **Feature Types:**
+
 - `claim_boundary`: Polygon geometry for claim boundaries
 - `claim`: Point geometry for claim centers (marker_color: red)
 - `reference`: Point geometry for reference points (marker_color: blue)
@@ -302,20 +307,24 @@ L.geoJSON(geojsonData, {
 The following options can be configured in the source code:
 
 ### Geocoding Settings
+
 - **User Agent**: `"document-mcp-server"`
 - **Rate Limit**: 1 request per second (Nominatim requirement)
 - **Cache**: Enabled by default (in-memory)
 
 ### Distance Units
+
 - **Primary Unit**: Miles (for historical claim compatibility)
 - **Supported Units**: miles, kilometers, feet
 - **Automatic Conversion**: Yes
 
 ### Claim Sizes
+
 - **Default Size**: 160 acres
 - **Shape**: Rectangular polygon (approximate square)
 
 ### Feature Search
+
 - **Default Radius**: 5km
 - **Max Results**: 10 features
 - **Supported Types**: waterway, peak, road
@@ -328,15 +337,17 @@ When using OpenStreetMap data, you must provide attribution:
 © OpenStreetMap contributors
 
 **Nominatim Usage Policy:**
+
 - Maximum 1 request per second
 - Provide a valid User-Agent header
 - Cache results when possible
-- See: https://operations.osmfoundation.org/policies/nominatim/
+- See: <https://operations.osmfoundation.org/policies/nominatim/>
 
 **Overpass API Usage:**
+
 - Be reasonable with query complexity
 - Limit search radius to <5km when possible
-- See: https://wiki.openstreetmap.org/wiki/Overpass_API
+- See: <https://wiki.openstreetmap.org/wiki/Overpass_API>
 
 ## Troubleshooting
 
@@ -345,12 +356,14 @@ When using OpenStreetMap data, you must provide attribution:
 **Problem**: Reference location cannot be found
 
 **Solutions**:
+
 1. Add more geographic context to the region parameter
 2. Try variations of the place name
 3. Use a nearby larger town if the exact location isn't in OSM
 4. Check for spelling errors in place names
 
 **Example**:
+
 ```json
 // Instead of:
 "region": "California"
@@ -364,6 +377,7 @@ When using OpenStreetMap data, you must provide attribution:
 **Problem**: `Too Many Requests` error from Nominatim
 
 **Solution**: The system automatically rate-limits to 1 request/second. If you still encounter issues:
+
 1. Reduce batch size in `map_all_claims`
 2. Use cached results (automatic)
 3. Wait a few minutes before retrying
@@ -373,13 +387,15 @@ When using OpenStreetMap data, you must provide attribution:
 **Problem**: LLM fails to extract location information
 
 **Solutions**:
-1. Ensure OPENAI_API_KEY environment variable is set
+
+1. Ensure the OPENAI_API_KEY environment variable is set (if using OpenAI's systems, alternately not needed if using Ollama)
 2. Check that the description contains clear location references
 3. Try rephrasing the description to be more explicit
 4. Verify OpenAI API quota and billing
 
 **Example of a good description**:
-```
+
+```text
 "The Lucky Strike claim is located 3 miles northeast of Virginia City, 
 Montana, following Alder Gulch upstream to the junction with Granite Creek."
 ```
@@ -389,6 +405,7 @@ Montana, following Alder Gulch upstream to the junction with Granite Creek."
 **Problem**: Calculated coordinates seem incorrect
 
 **Solutions**:
+
 1. Verify the reference location is correctly geocoded (check Google Maps link)
 2. Check that direction and distance were parsed correctly
 3. Remember that historical descriptions may be approximate
@@ -399,6 +416,7 @@ Montana, following Alder Gulch upstream to the junction with Granite Creek."
 **Problem**: No natural features found
 
 **Solutions**:
+
 1. Check that the feature exists in OpenStreetMap data
 2. Try different feature types (waterway, peak, road)
 3. Small or unnamed features may not be in OSM
@@ -407,29 +425,35 @@ Montana, following Alder Gulch upstream to the junction with Granite Creek."
 ## Example Claim Descriptions
 
 ### Simple Directional Claim
-```
+
+```test
 "Located 2 miles north of Deadwood, South Dakota"
 ```
+
 - **Extracts**: Reference (Deadwood), Direction (north), Distance (2 miles)
 - **Calculates**: Coordinates 2 miles north of Deadwood
 - **Returns**: GeoJSON with claim marker and boundary
 
 ### Complex Claim with Features
-```
+
+```text
 "The Johnson Lode claim is situated approximately 3 miles northeast of 
 Deadwood, following Whitewood Creek upstream to the junction with 
 Strawberry Creek. The claim encompasses 160 acres."
 ```
+
 - **Extracts**: Name (Johnson Lode), Reference (Deadwood), Direction (northeast), Distance (3 miles), Feature (Whitewood Creek)
 - **Calculates**: Coordinates 3 miles NE of Deadwood
 - **Searches**: For Whitewood Creek and nearby waterways
 - **Returns**: GeoJSON with claim, reference point, and natural features
 
 ### Multiple Landmarks
-```
+
+```text
 "Beginning at the old stamp mill, 1.5 miles south of Bodie, California, 
 thence running along the eastern ridge of the Sierra Nevada mountains"
 ```
+
 - **Extracts**: Reference (Bodie), Direction (south), Distance (1.5 miles), Additional landmarks (stamp mill, Sierra Nevada)
 - **Calculates**: Coordinates relative to Bodie
 - **Returns**: GeoJSON with claim and reference point
@@ -438,7 +462,7 @@ thence running along the eastern ridge of the Sierra Nevada mountains"
 
 The geospatial features require the following Python packages:
 
-```
+```text
 geopy>=2.4.0          # Geocoding and geodesic calculations
 OSMPythonTools>=0.3.5 # OpenStreetMap Overpass API queries
 openai>=1.0.0         # LLM-powered claim parsing
@@ -449,25 +473,30 @@ These are automatically installed when building the Docker image.
 ## Environment Variables
 
 ### Required
+
 - `OPENAI_API_KEY`: Your OpenAI API key for claim parsing
 
 ### Optional
+
 - None currently (geocoding uses public Nominatim API)
 
 ## Performance Considerations
 
 ### Caching
+
 - Geocoding results are cached in memory
 - Reduces API calls for repeated locations
 - Cache persists for the lifetime of the server process
 
 ### Batch Processing
+
 - `map_all_claims` processes claims sequentially
 - Each claim requires 1-2 API calls (geocoding + optional features)
 - Rate limiting adds ~1 second per claim
 - Typical batch of 10 claims takes ~15-20 seconds
 
 ### Resource Usage
+
 - Minimal memory footprint
 - No heavy computation (geodesic calculations are fast)
 - GeoJSON output is compact and efficient
@@ -475,6 +504,7 @@ These are automatically installed when building the Docker image.
 ## Support
 
 For issues or questions:
+
 1. Check this documentation
 2. Review error messages carefully
 3. Verify API keys and configuration

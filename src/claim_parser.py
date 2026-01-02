@@ -1,7 +1,7 @@
 """
 Mining claim parser using LLM for entity extraction.
 
-This module uses OpenAI's GPT-4-turbo to parse natural language descriptions
+This module uses OpenAI's GPT-4o-mini to parse natural language descriptions
 of mining claim locations and extract structured data.
 """
 
@@ -23,6 +23,7 @@ class ClaimParser:
             print("Without it, claim parsing will return errors.")
         
         self.client = OpenAI(api_key=api_key) if api_key else None
+        self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")  # Default to cost-effective model
         
         # System prompt for entity extraction
         self.system_prompt = """You are a specialized assistant that extracts location information from mining claim descriptions.
@@ -42,7 +43,7 @@ Return ONLY valid JSON. If a field cannot be determined, use null. Be precise an
     
     def parse_claim_description(self, description: str) -> Optional[Dict]:
         """
-        Parse a mining claim description using GPT-4-turbo.
+        Parse a mining claim description using GPT-4o-mini.
         
         Args:
             description: Natural language description of claim location
@@ -65,9 +66,9 @@ Return ONLY valid JSON. If a field cannot be determined, use null. Be precise an
             }
         
         try:
-            # Call GPT-4-turbo for entity extraction
+            # Call OpenAI API for entity extraction
             response = self.client.chat.completions.create(
-                model="gpt-4-turbo",
+                model=self.model,
                 messages=[
                     {"role": "system", "content": self.system_prompt},
                     {"role": "user", "content": f"Extract location information from this claim description:\n\n{description}"}
