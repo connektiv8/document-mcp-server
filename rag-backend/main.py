@@ -29,7 +29,7 @@ MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://document-mcp-server:8000")
 class ChatRequest(BaseModel):
     message: str
     model: str = "llama3.2:1b"  # Use available model
-    max_results: int = 3
+    max_results: int = 15
 
 class ChatResponse(BaseModel):
     response: str
@@ -50,29 +50,45 @@ async def query_mcp_server(query: str, max_results: int = 3):
             data = response.json()
             
             if not data.get('success') or not data.get('results'):
-                return "No relevant documents found."
+                return "No relevant documents found.", []
             
-            # Format results into readable text
+            # Format results into readable text and extract sources
             results = data['results']
             formatted = f"Found {len(results)} relevant document chunks:\n\n"
+            sources = []
+            
             for i, result in enumerate(results, 1):
                 formatted += f"[Chunk {i}]\n"
                 formatted += f"{result['text']}\n"
+                
+                # Build source information
+                source_info = f"Chunk {i}"
                 if 'metadata' in result and result['metadata']:
                     meta = result['metadata']
+                    source_parts = []
                     if 'source_file' in meta:
                         formatted += f"Source: {meta['source_file']}\n"
+                        source_parts.append(f"File: {meta['source_file']}")
+                    if 'page' in meta:
+                        source_parts.append(f"Page: {meta['page']}")
                     if 'date_year' in meta:
                         formatted += f"Year: {meta['date_year']}\n"
+                        source_parts.append(f"Year: {meta['date_year']}")
                     if 'location' in meta:
                         formatted += f"Location: {meta['location']}\n"
+                        source_parts.append(f"Location: {meta['location']}")
+                    
+                    if source_parts:
+                        source_info = " | ".join(source_parts)
+                
+                sources.append(source_info)
                 formatted += "\n"
             
-            return formatted
+            return formatted, sources
             
         except Exception as e:
             print(f"Error querying MCP server: {e}")
-            return f"Error searching documents: {str(e)}"
+            return f"Error searching documents: {str(e)}", []
 
 async def query_ollama(prompt: str, model: str = "llama3.2:1b"):
     """Query Ollama for response generation"""
@@ -110,21 +126,27 @@ async def chat(request: ChatRequest):
     async def generate():
         try:
             # Step 1: Search for relevant documents
-            search_results = await query_mcp_server(request.message, request.max_results)
+            search_results, sources = await query_mcp_server(request.message, request.max_results)
             
             # Step 2: Build prompt for Ollama
-            prompt = f"""You are a helpful assistant that answers questions based on historical mining documents.
+            prompt = f"""You are a geospatial data extraction specialist analyzing historical Victorian mining documents. Extract and organize location information from the documents.
 
 User Question: {request.message}
 
-Relevant Document Excerpts:
+Historical Document Excerpts:
 {search_results}
 
 Instructions:
-- Answer the question based ONLY on the information provided in the excerpts above
-- If the excerpts don't contain enough information to answer, say so
-- Cite specific details from the excerpts when possible
-- Be concise and factual
+- Extract SPECIFIC LOCATIONS: mine names, claim names, geographic features (creeks, hills, reefs)
+- Include LANDMARKS and REFERENCES: distance/direction from towns, creek junctions, road intersections
+- Note YIELDS and PRODUCTION DATA: gold amounts, nugget sizes, crushing returns
+- Specify BOUNDARIES when mentioned: claim dimensions, reef extents, mining lease areas
+- Include TIME PERIODS: dates of operation, discovery years
+- Organize by location/mine name with all relevant details grouped together
+- Use exact measurements and directions from the documents
+- If coordinates or survey data are mentioned, include them
+
+Format your answer as a detailed list with each location/mine as a separate entry.
 
 Answer:"""
 
@@ -148,7 +170,7 @@ Answer:"""
                                     yield f"data: {json.dumps({'token': chunk['response']})}\n\n"
                                 if chunk.get("done", False):
                                     # Send done signal with sources
-                                    yield f"data: {json.dumps({'done': True, 'sources': [search_results]})}\n\n"
+                                    yield f"data: {json.dumps({'done': True, 'sources': sources})}\n\n"
                             except json.JSONDecodeError:
                                 continue
         except Exception as e:
@@ -169,7 +191,7 @@ async def websocket_chat(websocket: WebSocket):
             
             # Search documents
             await websocket.send_json({"type": "status", "message": "Searching documents..."})
-            search_results = await query_mcp_server(message)
+            search_results, _ = await query_mcp_server(message)
             
             # Build prompt
             prompt = f"""You are a helpful assistant that answers questions based on historical mining documents.

@@ -21,6 +21,7 @@ function App() {
   const [model, setModel] = useState('llama3.2:1b')
   const [availableModels, setAvailableModels] = useState<string[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   // Fetch available models on component mount
   useEffect(() => {
@@ -61,6 +62,9 @@ function App() {
     setInput('')
     setLoading(true)
 
+    // Create new AbortController for this request
+    abortControllerRef.current = new AbortController()
+
     // Add empty assistant message that we'll update with streaming tokens
     const assistantMessageIndex = messages.length + 1
     setMessages(prev => [...prev, { role: 'assistant', content: '' }])
@@ -73,7 +77,8 @@ function App() {
           message: input,
           model: model,
           max_results: 3
-        })
+        }),
+        signal: abortControllerRef.current.signal
       })
 
       if (!response.ok) {
@@ -137,16 +142,38 @@ function App() {
       }
     } catch (error) {
       console.error('Error:', error)
-      setMessages(prev => {
-        const newMessages = [...prev]
-        newMessages[assistantMessageIndex] = {
-          role: 'assistant',
-          content: 'Sorry, there was an error processing your request.'
-        }
-        return newMessages
-      })
+      // Don't show error message if it was aborted by user
+      if (error instanceof Error && error.name === 'AbortError') {
+        // Update message to show it was stopped
+        setMessages(prev => {
+          const newMessages = [...prev]
+          if (newMessages[assistantMessageIndex]) {
+            newMessages[assistantMessageIndex] = {
+              role: 'assistant',
+              content: newMessages[assistantMessageIndex].content + '\n\n[Response stopped by user]'
+            }
+          }
+          return newMessages
+        })
+      } else {
+        setMessages(prev => {
+          const newMessages = [...prev]
+          newMessages[assistantMessageIndex] = {
+            role: 'assistant',
+            content: 'Sorry, there was an error processing your request.'
+          }
+          return newMessages
+        })
+      }
     } finally {
       setLoading(false)
+      abortControllerRef.current = null
+    }
+  }
+
+  const stopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
     }
   }
 
@@ -235,9 +262,15 @@ function App() {
               rows={2}
               disabled={loading}
             />
-            <button onClick={sendMessage} disabled={loading || !input.trim()}>
-              {loading ? '⏳' : '📤'} Send
-            </button>
+            {loading ? (
+              <button onClick={stopGeneration} className="stop-button">
+                🛑 Stop
+              </button>
+            ) : (
+              <button onClick={sendMessage} disabled={!input.trim()}>
+                📤 Send
+              </button>
+            )}
           </div>
         </div>
       </div>

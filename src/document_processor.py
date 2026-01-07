@@ -65,9 +65,9 @@ class DocumentProcessor:
         text = self.process_file(filepath)
         
         metadata = {
-            'source': filepath.name,
-            'type': filepath.suffix.lower(),
-            'path': str(filepath)
+            'source_file': filepath.name,
+            'file_type': filepath.suffix.lower(),
+            'file_path': str(filepath)
         }
         
         chunks, metadatas = self.chunk_text(text, metadata)

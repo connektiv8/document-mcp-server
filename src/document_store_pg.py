@@ -96,6 +96,10 @@ class PgVectorDocumentStore:
         finally:
             conn.close()
     
+    def close(self):
+        """Close method for compatibility (connections are managed per-operation)"""
+        pass
+    
     def add_documents(self, texts: List[str], metadatas: Optional[List[Dict]] = None):
         """Add documents in batches"""
         if not texts:
